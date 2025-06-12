@@ -1,0 +1,103 @@
+@startuml InureTech-to-be
+!include ./puml_libs/C4_Component.puml
+!include ./puml_libs/C4_Deployment.puml
+
+LAYOUT_WITH_LEGEND()
+
+'──────────────────────────
+' Акторы + глобальные сервисы
+'──────────────────────────
+Person(user, "Пользователь")
+
+Node(gslb, "Cloud DNS / Traffic Director", "Geo-DNS + Health Checks")
+
+'──────────────────────────
+' 🟦  Регион 1 — Москва
+'──────────────────────────
+Deployment_Node(region1, "Регион R1: Москва", "Yandex Cloud (AZ-msk-1)", "Независимый кластер") {
+
+  Deployment_Node(alb1, "Application Load Balancer (L7)", "HTTPS + HTTP/2") {
+
+    Deployment_Node(k8s1, "Kubernetes Cluster R1", "Managed K8s") {
+
+      Container(core1, "core-app", "Spring Boot", "Монолит (поиск + оформление)")
+      Container(ci1, "client-info", "Spring Boot", "Данные клиентов")
+      Container(agg1, "ins-product-aggregator", "Spring Boot", "Агрегатор страховых продуктов")
+      Container(sett1, "ins-comp-settlement", "Spring Boot", "Взаиморасчёты (CronJob)")
+
+      Container(ing1, "Ingress NGINX", "k8s Ingress", "TLS termination → сервисы")
+    }
+  }
+
+  Deployment_Node(pg1, "PostgreSQL Cluster R1", "Patroni + 3 узла", "master + 2 sync-replicas") {
+    Component(pgb1, "pgBouncer & Consul", "Conn-pool + Service Discovery")
+  }
+}
+
+'──────────────────────────
+' 🟦  Регион 2 — Казань
+'──────────────────────────
+Deployment_Node(region2, "Регион R2: Казань", "Yandex Cloud (AZ-kzn-1)", "Независимый кластер") {
+
+  Deployment_Node(alb2, "Application Load Balancer (L7)", "HTTPS + HTTP/2") {
+
+    Deployment_Node(k8s2, "Kubernetes Cluster R2", "Managed K8s") {
+
+      Container(core2, "core-app", "Spring Boot")
+      Container(ci2, "client-info", "Spring Boot")
+      Container(agg2, "ins-product-aggregator", "Spring Boot")
+      Container(sett2, "ins-comp-settlement", "Spring Boot")
+
+      Container(ing2, "Ingress NGINX", "k8s Ingress")
+    }
+  }
+
+  Deployment_Node(pg2, "PostgreSQL Cluster R2", "Patroni + 3 узла", "standby-master + 2 replicas") {
+    Component(pgb2, "pgBouncer & Consul", "Conn-pool + Service Discovery")
+  }
+}
+
+'──────────────────────────
+' Инфраструктурные сервисы
+'──────────────────────────
+Node(cdn, "Yandex CDN", "Edge-кэш статических файлов")
+Node(obj, "Object Storage (S3)", "WAL-архив + полноценные бэкапы")
+
+'──────────────────────────
+' Связи (основные)
+'──────────────────────────
+user -> gslb : HTTPS
+gslb --> alb1 : рег. R1 (healthy)\n/ R2 (failover)
+gslb --> alb2
+
+alb1 --> ing1
+alb2 --> ing2
+
+ing1 --> core1
+ing1 --> ci1
+ing1 --> agg1
+ing1 --> sett1
+
+ing2 --> core2
+ing2 --> ci2
+ing2 --> agg2
+ing2 --> sett2
+
+core1  --> pgb1
+ci1    --> pgb1
+agg1   --> pgb1
+sett1  --> pgb1
+
+core2  --> pgb2
+ci2    --> pgb2
+agg2   --> pgb2
+sett2  --> pgb2
+
+pg1 --> pg2 : Логическая репликация (async, ≤15 мин lag)
+pg1 --> obj : WAL-архив\n(full + incremental бэкапы)
+pg2 --> obj
+
+core1 ..> cdn : Статика → Edge
+core2 ..> cdn
+
+@enduml
