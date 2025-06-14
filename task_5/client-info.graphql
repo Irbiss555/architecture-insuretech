@@ -1,0 +1,55 @@
+type Query {
+  """
+  Получить одного клиента по ID.
+  """
+  client(id: ID!): Client
+
+  """
+  Получить сразу несколько клиентов за один запрос
+  """
+  clients(ids: [ID!]!): [Client!]!
+}
+
+type Client {
+  id: ID!
+  name: String
+  age: Int
+
+  documents(filter: DocumentFilter): [Document!]!
+
+  relatives(relationTypes: [RelationType!]): [Relative!]!
+}
+
+type Document {
+  id: ID!
+  type: String
+  number: String
+  issueDate: Date
+  expiryDate: Date
+}
+
+""" Родственник клиента """
+type Relative {
+  id: ID!
+  relationType: RelationType!
+  name: String
+  age: Int
+}
+
+""" Доп-фильтры при выборке документов """
+input DocumentFilter {
+  types: [String!]
+  expired: Boolean
+}
+
+""" Категории родственных связей """
+enum RelationType {
+  SPOUSE
+  CHILD
+  PARENT
+  SIBLING
+  OTHER
+}
+
+""" Дата без времени """
+scalar Date
